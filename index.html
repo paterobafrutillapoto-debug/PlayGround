@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#101426" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23b6f27d'/%3E%3Ctext x='32' y='48' text-anchor='middle' font-size='46'%3E✦%3C/text%3E%3C/svg%3E" />
+  <title>Pocket Pulse — A rhythm monster adventure</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Pocket Pulse home"><span class="brand-mark">✦</span> POCKET <b>PULSE</b></a>
+      <div class="top-note"><span class="live-dot"></span> A LITTLE ADVENTURE, A LOT OF BEAT</div>
+      <button class="sound-toggle" id="soundToggle" aria-label="Toggle sound">♫ <span>Sound on</span></button>
+    </header>
+    <section class="game-frame" aria-label="Pocket Pulse game">
+      <canvas id="game" width="1000" height="600" aria-label="Game canvas"></canvas>
+      <div class="touch-controls" id="touchControls" aria-label="Rhythm controls">
+        <button data-lane="0" aria-label="Left note">←</button>
+        <button data-lane="1" aria-label="Down note">↓</button>
+        <button data-lane="2" aria-label="Up note">↑</button>
+        <button data-lane="3" aria-label="Right note">→</button>
+      </div>
+    </section>
+    <footer><span>Move with <kbd>WASD</kbd> / <kbd>← ↑ ↓ →</kbd> · Hit the beat with the arrows</span><span class="footer-right">A tiny world by <b>you & your rhythm buddy</b></span></footer>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
