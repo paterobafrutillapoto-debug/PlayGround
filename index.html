@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101b2c">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101b2c'/%3E%3Cpath d='M34 9v32a10 10 0 1 1-6-9V17l25-5v24a10 10 0 1 1-6-9V9z' fill='%23d8f36a'/%3E%3C/svg%3E">
+<title>Wildbeat — a rhythm trail adventure</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+:root{color-scheme:dark;--ink:#f4f3e8;--muted:#a9b5b4;--lime:#d8f36a;--coral:#ff806d;--blue:#8de0e0;--night:#101b2c}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,#25384b 0,#111d2c 60%,#0b1421 100%);color:var(--ink);font-family:'Space Grotesk',sans-serif;overflow:hidden}
+.shell{width:min(100vw,1200px);padding:20px}.topline{display:flex;align-items:center;justify-content:space-between;padding:0 6px 12px;color:#b5c3c0;font:500 10px 'DM Mono',monospace;letter-spacing:.18em;text-transform:uppercase}.brand{color:var(--lime);font-weight:500}.live{display:flex;align-items:center;gap:8px}.live:before{content:'';width:7px;height:7px;border-radius:50%;background:#a9ec81;box-shadow:0 0 12px #a9ec81}
+.frame{position:relative;width:100%;aspect-ratio:16/10;border:1px solid rgba(212,237,221,.25);border-radius:8px;background:#17283b;box-shadow:0 26px 90px #0008,0 0 0 5px #132033,0 0 0 6px #344555;overflow:hidden}canvas{display:block;width:100%;height:100%;image-rendering:pixelated;touch-action:none}
+.bottomline{display:flex;align-items:center;justify-content:space-between;padding:13px 6px 0;color:#9daead;font:10px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase}.keys{display:flex;align-items:center;gap:6px}.key{padding:4px 6px;border:1px solid #536674;border-radius:3px;color:#e3e7d8;background:#253546}.mobile-hint{display:none}
+@media(max-width:650px){.shell{padding:8px}.topline{padding-bottom:8px;font-size:8px}.bottomline{font-size:8px}.keys{display:none}.mobile-hint{display:block}.frame{border-radius:5px}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <div class="topline"><span class="brand">✳ WILDBEAT / FIELD NOTES 01</span><span class="live">A rhythm trail adventure</span></div>
+  <div class="frame"><canvas id="game" width="960" height="600" aria-label="Wildbeat game"></canvas></div>
+  <div class="bottomline"><span id="status">A little adventure, in time.</span><span class="keys"><span class="key">WASD</span> MOVE <span style="padding:0 5px">·</span><span class="key">SPACE</span> INTERACT <span style="padding:0 5px">·</span><span class="key">← ↑ ↓ →</span> HIT THE BEAT</span><span class="mobile-hint">Touch to play · arrows to move / tap notes</span></div>
+</main>
+<script>
+(()=>{
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d'),statusLine=document.getElementById('status');
+const W=960,H=600, keys={}, lanes=['←','↓','↑','→'], laneColors=['#ff8b76','#f3d45f','#8dd9d0','#bb9df0'];
+let mode='title',last=0,t=0,worldTime=0,encounterWait=0,player={x:390,y:330,dir:1,hp:100,max:100,xp:0,level:1,steps:0}, battle=null, message='',messageTimer=0, audio=null, muted=false;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function rounded(x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}}
+function text(s,x,y,size=16,color='#f4f3e8',align='left',font='Space Grotesk'){ctx.fillStyle=color;ctx.font=`${size}px '${font}', sans-serif`;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(s,x,y)}
+function mono(s,x,y,size=11,color='#bdcbc5',align='left'){text(s,x,y,size,color,align,'DM Mono')}
+function box(x,y,w,h,color,alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.fillRect(x,y,w,h);ctx.globalAlpha=1}
+function line(x1,y1,x2,y2,color,width=1){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
+function sound(freq=440,dur=.1,type='sine',vol=.035){if(muted)return;try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(vol,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+dur);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+dur)}catch(e){}}
+function setStatus(s){statusLine.textContent=s}
+function startGame(){mode='world';player={x:395,y:355,dir:1,hp:100,max:100,xp:0,level:1,steps:0};encounterWait=1.6;message='';setStatus('Find your rhythm out there.');sound(523,.12)}
+// --- hand-painted pixel field -------------------------------------------------
+function drawSky(){let g=ctx.createLinearGradient(0,0,0,360);g.addColorStop(0,'#9bd8d2');g.addColorStop(.7,'#c7e4c3');g.addColorStop(1,'#e1e9b9');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);ctx.fillStyle='#ffe9a4';ctx.beginPath();ctx.arc(754,107,39,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff2bf';ctx.beginPath();ctx.arc(754,107,27,0,Math.PI*2);ctx.fill();
+  // distant rounded hills
+  ctx.fillStyle='#7db9a2';ctx.beginPath();ctx.moveTo(0,285);ctx.quadraticCurveTo(120,210,270,285);ctx.quadraticCurveTo(410,197,570,279);ctx.quadraticCurveTo(760,206,960,268);ctx.lineTo(960,410);ctx.lineTo(0,410);ctx.fill();
+  ctx.fillStyle='#6bab8f';ctx.beginPath();ctx.moveTo(0,335);ctx.quadraticCurveTo(173,245,323,335);ctx.quadraticCurveTo(482,249,660,329);ctx.quadraticCurveTo(806,249,960,323);ctx.lineTo(960,430);ctx.lineTo(0,430);ctx.fill();}
+function tree(x,y,s=1,dark=false){ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.fillStyle='#725b46';ctx.fillRect(-6,13,12,35);ctx.fillStyle=dark?'#2a665d':'#3e8069';ctx.beginPath();ctx.arc(0,0,27,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(-18,10,19,0,Math.PI*2);ctx.arc(19,12,18,0,Math.PI*2);ctx.fill();ctx.fillStyle=dark?'#347b68':'#66a77c';ctx.beginPath();ctx.arc(-7,-8,13,0,Math.PI*2);ctx.arc(12,2,12,0,Math.PI*2);ctx.fill();ctx.restore()}
+function flower(x,y,c){ctx.fillStyle=c;ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.arc(x+4,y-3,3,0,Math.PI*2);ctx.arc(x+7,y,3,0,Math.PI*2);ctx.arc(x+4,y+3,3,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f6d36d';ctx.fillRect(x+3,y-1,3,3)}
+function drawField(){drawSky();
+  // far forest
+  for(let i=0;i<13;i++)tree(i*86-25,300+(i%3)*15,.72+(i%4)*.08,true);
+  // trail clearing
+  ctx.fillStyle='#b8c982';ctx.beginPath();ctx.moveTo(350,298);ctx.lineTo(601,298);ctx.lineTo(827,600);ctx.lineTo(148,600);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#d5cf91';ctx.beginPath();ctx.moveTo(413,302);ctx.lineTo(550,302);ctx.lineTo(684,600);ctx.lineTo(288,600);ctx.closePath();ctx.fill();
+  // grass strokes
+  for(let i=0;i<115;i++){let x=(i*173+31)%960,y=330+(i*97)%260;if(x>340-(y-300)*.47&&x<620+(y-300)*.48)continue;line(x,y,x+((i%3)-1)*3,y-5,['#81aa72','#a9bd7a','#739c6b'][i%3],1)}
+  // trees and shrubs at edges
+  [[85,362,1.3],[190,325,.95],[842,340,1.1],[930,388,1.3],[70,480,1.45],[882,480,1.42],[250,390,.68],[741,387,.75]].forEach(a=>tree(...a));
+  for(let i=0;i<26;i++){let x=(i*139+37)%960,y=365+(i*83)%220;if(x>350-(y-300)*.5&&x<615+(y-300)*.5)continue;flower(x,y,['#f6d16c','#f7a58d','#e7eff0'][i%3])}
+  // trail markers
+  rounded(69,240,136,51,9,'#173044','#d2d7ad');mono('ROUTE 01',83,255,10,'#d8f36a');text('SUNDOWN PATH',83,275,14,'#f4f3e8');
+  // signpost
+  ctx.fillStyle='#66584a';ctx.fillRect(738,311,7,61);rounded(710,302,63,29,4,'#ecdca3','#66584a');text('♫',741,317,17,'#45735d','center');
+  drawHero(player.x,player.y,player.dir,true);
+  // scene HUD
+  rounded(22,20,256,61,8,'#122738dd','#ffffff34');text('✳  SUNMEADOW TRAIL',39,40,13,'#ecf0d8');mono('DAY 01   ·   A GOOD DAY TO WANDER',39,59,9,'#a8c4b8');
+  rounded(786,20,151,61,8,'#122738dd','#ffffff34');mono('YOUR PULSE',802,39,9,'#a9bab3');text(`LV ${player.level}   ${player.hp} / ${player.max} HP`,802,60,15,'#e8eece');
+  if(messageTimer>0){rounded(278,520,404,46,8,'#122738ed','#ffffff3a');text(message,480,543,15,'#f2efd9','center')}
+}
+function drawHero(x,y,dir=1,walk=false){ctx.save();ctx.translate(x,y);ctx.fillStyle='#315b50';ctx.beginPath();ctx.ellipse(0,24,17,6,0,0,Math.PI*2);ctx.fill();
+  // legs
+  ctx.fillStyle='#31465b';ctx.fillRect(-8,8,7,13);ctx.fillRect(2,8,7,13);ctx.fillStyle='#e7d39b';ctx.fillRect(-10,18,9,5);ctx.fillRect(1,18,10,5);
+  // backpack
+  ctx.fillStyle='#de9466';ctx.fillRect(dir>0?-14:7,-15,9,19);ctx.fillStyle='#f0b879';ctx.fillRect(dir>0?-13:8,-13,7,10);
+  // torso
+  ctx.fillStyle='#e76f60';ctx.fillRect(-10,-13,20,24);ctx.fillStyle='#f0a678';ctx.fillRect(-10,-13,20,5);ctx.fillStyle='#f3e7c2';ctx.fillRect(-2,-5,4,4);
+  // head
+  ctx.fillStyle='#efc895';ctx.fillRect(-10,-29,20,17);ctx.fillRect(-13,-25,4,9);ctx.fillRect(9,-25,4,9);
+  // hair and cap
+  ctx.fillStyle='#523c3d';ctx.fillRect(-11,-32,22,7);ctx.fillRect(-9,-36,17,5);ctx.fillStyle='#d8f36a';ctx.fillRect(-11,-29,22,3);ctx.fillRect(dir>0?4:-7,-23,3,3);
+  ctx.restore()}
+// --- creatures ---------------------------------------------------------------
+function drawCreature(kind,x,y,scale=1,bob=0){ctx.save();ctx.translate(x,y+bob);ctx.scale(scale,scale);
+ if(kind==='mosskit'){
+  // tiny moss fox
+  ctx.fillStyle='#28675a';ctx.beginPath();ctx.ellipse(0,15,53,35,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#419276';ctx.beginPath();ctx.ellipse(-3,7,45,29,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#367b66';ctx.beginPath();ctx.moveTo(-36,-12);ctx.lineTo(-45,-59);ctx.lineTo(-12,-34);ctx.moveTo(7,-32);ctx.lineTo(32,-61);ctx.lineTo(31,-16);ctx.fill();ctx.fillStyle='#e2a982';ctx.beginPath();ctx.moveTo(-36,-19);ctx.lineTo(-39,-45);ctx.lineTo(-20,-29);ctx.moveTo(15,-31);ctx.lineTo(27,-48);ctx.lineTo(25,-21);ctx.fill();
+  ctx.fillStyle='#f5e1ac';ctx.beginPath();ctx.ellipse(15,18,25,18,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#2d564e';ctx.fillRect(-30,20,13,20);ctx.fillRect(17,20,13,20);ctx.fillStyle='#f4e3ba';ctx.fillRect(-30,37,15,5);ctx.fillRect(17,37,15,5);
+  ctx.fillStyle='#182a30';ctx.fillRect(-15,-4,5,7);ctx.fillRect(20,-4,5,7);ctx.fillStyle='#f4fbdb';ctx.fillRect(-14,-4,2,3);ctx.fillRect(21,-4,2,3);ctx.fillStyle='#d47d6c';ctx.fillRect(5,9,6,4);ctx.fillStyle='#b8df8e';ctx.fillRect(-8,-28,8,6);
+ }else if(kind==='embercub'){
+  ctx.fillStyle='#c65749';ctx.beginPath();ctx.ellipse(0,11,45,35,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f47b55';ctx.beginPath();ctx.ellipse(-3,2,38,31,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ef9a5c';ctx.beginPath();ctx.moveTo(-24,-17);ctx.lineTo(-34,-55);ctx.lineTo(-5,-28);ctx.moveTo(13,-27);ctx.lineTo(38,-48);ctx.lineTo(31,-13);ctx.fill();ctx.fillStyle='#f4e1b5';ctx.beginPath();ctx.ellipse(11,17,22,18,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#6b3b40';ctx.fillRect(-15,-7,5,7);ctx.fillRect(19,-7,5,7);ctx.fillStyle='#ffd891';ctx.fillRect(-14,-7,2,3);ctx.fillRect(20,-7,2,3);ctx.fillStyle='#803f48';ctx.fillRect(4,8,7,4);ctx.fillStyle='#ffd36d';ctx.beginPath();ctx.arc(39,-44,7,0,Math.PI*2);ctx.fill();
+ }else{
+  ctx.fillStyle='#567db6';ctx.beginPath();ctx.ellipse(0,13,48,35,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#87c8d1';ctx.beginPath();ctx.ellipse(0,1,39,30,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#669bc1';ctx.beginPath();ctx.moveTo(-30,-18);ctx.lineTo(-43,-45);ctx.lineTo(-11,-29);ctx.moveTo(11,-29);ctx.lineTo(37,-52);ctx.lineTo(32,-12);ctx.fill();ctx.fillStyle='#f1edc4';ctx.beginPath();ctx.ellipse(11,16,22,16,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#263e58';ctx.fillRect(-16,-7,5,7);ctx.fillRect(19,-7,5,7);ctx.fillStyle='#e2f5df';ctx.fillRect(-15,-7,2,3);ctx.fillRect(20,-7,2,3);ctx.fillStyle='#d87972';ctx.fillRect(3,8,7,4);
+ }
+ ctx.restore()}
+// --- rhythm duel -------------------------------------------------------------
+const species=[{name:'Mosskit',kind:'mosskit',color:'#9de0a7',max:100,phrase:'A leafy little beat is growing.'},{name:'Embercub',kind:'embercub',color:'#ffad7d',max:110,phrase:'A warm little spark is getting brave.'},{name:'Tidepup',kind:'tidepup',color:'#9de3e5',max:95,phrase:'A splashy rhythm drifts your way.'}];
+function beginBattle(){let s=species[Math.floor(Math.random()*species.length)];battle={foe:s,hp:s.max,max:s.max,beat:0,measure:0,notes:[],hits:0,misses:0,combo:0,best:0,score:0,round:0,phase:'ready',phaseTimer:1.2,clock:0,bpm:100,flash:0,result:'',lastJudged:-99};mode='battle';setStatus('Listen close. Land your notes on the beat!');sound(392,.18)}
+function makePhrase(){battle.notes=[];battle.hits=0;battle.misses=0;battle.round++;const patterns=[[0,1,2,3,0,2,1,3],[0,0,2,3,1,2,3,1],[1,3,0,2,1,0,3,2],[0,2,0,1,3,2,1,3]];let p=patterns[(battle.round-1)%patterns.length];for(let i=0;i<8;i++)battle.notes.push({lane:p[i],time:battle.clock+1.25+i*.62,done:false})}
+function startPhrase(){battle.phase='playing';battle.clock=0;makePhrase();sound(660,.08)}
+function hitLane(lane){if(mode!=='battle'||battle.phase!=='playing')return;let candidates=battle.notes.filter(n=>!n.done&&n.lane===lane);let target=candidates.sort((a,b)=>Math.abs(a.time-battle.clock)-Math.abs(b.time-battle.clock))[0];if(!target)return;let diff=Math.abs(target.time-battle.clock);if(diff>.29)return;target.done=true;target.grade=diff<.11?'PERFECT':diff<.21?'GREAT':'OK';battle.hits++;battle.combo++;battle.best=Math.max(battle.best,battle.combo);battle.score+=target.grade==='PERFECT'?300:target.grade==='GREAT'?200:100;battle.lastJudged=battle.clock;battle.judge=target.grade;battle.judgeTimer=.55;battle.flash=1;sound([523,659,784][Math.min(2,Math.floor((.3-diff)*8))],.1,'triangle',.04)}
+function resolvePhrase(){let damage=Math.max(0,Math.round((battle.hits*8)+(battle.hits>=8?16:0)));battle.hp=Math.max(0,battle.hp-damage);battle.phase='resolve';battle.phaseTimer=1.8;battle.result=battle.hits===8?'PERFECT GROOVE!':battle.hits>=6?'NICE RHYTHM!':battle.hits>=3?'GOOD TRY!':'KEEP THE BEAT!';battle.flash=.8;
+ if(battle.hp<=0){battle.phase='won';battle.phaseTimer=2.3;battle.result=`${battle.foe.name} is dancing with you!`;sound(784,.3,'triangle')}
+ else {let lost=Math.max(4,(8-battle.hits)*3);player.hp=Math.max(1,player.hp-lost);sound(210,.24,'sine',.04)} }
+function drawBar(x,y,w,h,pct,fill,bg='#182c37'){rounded(x,y,w,h,h/2,bg);rounded(x+2,y+2,Math.max(0,(w-4)*clamp(pct,0,1)),h-4,(h-4)/2,fill)}
+function drawBattle(){
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#506c76');g.addColorStop(.55,'#304d55');g.addColorStop(1,'#192e39');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ for(let i=0;i<45;i++){let x=(i*173+43)%960,y=(i*79+19)%210;ctx.fillStyle=i%3?'#d3e2be':'#f6d884';ctx.globalAlpha=.35+Math.sin(t*2+i)*.18;ctx.fillRect(x,y,2,2)}ctx.globalAlpha=1;
+ ctx.fillStyle='#496d64';ctx.beginPath();ctx.moveTo(0,250);ctx.quadraticCurveTo(180,184,335,258);ctx.quadraticCurveTo(560,163,743,250);ctx.quadraticCurveTo(860,189,960,236);ctx.lineTo(960,490);ctx.lineTo(0,490);ctx.fill();ctx.fillStyle='#385c54';ctx.beginPath();ctx.moveTo(0,320);ctx.quadraticCurveTo(255,230,470,326);ctx.quadraticCurveTo(715,232,960,310);ctx.lineTo(960,505);ctx.lineTo(0,505);ctx.fill();
+ ctx.fillStyle='#19373c';ctx.beginPath();ctx.ellipse(510,400,330,71,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#78956e';ctx.beginPath();ctx.ellipse(510,385,324,61,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#a5ae7a';ctx.beginPath();ctx.ellipse(510,383,284,43,0,0,Math.PI*2);ctx.fill();
+ for(let i=0;i<8;i++){let x=74+i*119+Math.sin(t*1.5+i)*11,y=174+Math.sin(t*2+i*2)*16;text(['♪','·','♫'][i%3],x,y,20,['#e8e7ae','#d0dfb0','#ecb994'][i%3]+'aa','center')}
+ drawHero(306,386,1,false);drawCreature(battle.foe.kind,641,360,1.34,Math.sin(t*4)*4);
+ rounded(25,21,316,102,10,'#142d37eb','#ffffff30');text(`${battle.foe.name}`,43,46,19,'#f2eed7');mono('WILD GROOVE   ·   LV 02',43,67,10,'#b1cbc2');drawBar(43,87,278,15,battle.hp/battle.max,'#ec8e76','#31434a');mono(`${battle.hp} / ${battle.max}`,317,79,9,'#e9eee1','right');
+ rounded(618,21,316,102,10,'#142d37eb','#ffffff30');text('TRAIL TRAINER',638,46,12,'#b9d1c5');text(`LV ${player.level}   ·   ${player.hp} HP`,638,68,17,'#f1efd9');drawBar(638,88,275,14,player.hp/player.max,'#d7ed77','#31434a');
+ rounded(96,447,768,133,12,'#10232cef','#d4e5cf44');mono(battle.phase==='ready'?'LISTEN TO THE GROOVE':battle.phase==='playing'?'YOUR TURN — HIT THE NOTES':battle.phase==='resolve'?'ROUND COMPLETE':battle.phase==='won'?'A NEW FRIEND!':'DUEL ENDED',480,466,10,'#c6d6c5','center');
+ const x0=283,lw=98,gap=13,ry=519;
+ for(let i=0;i<4;i++){let x=x0+i*(lw+gap);rounded(x,483,lw,72,8,'#1c3440','#ffffff14');rounded(x+27,ry-15,44,31,7,laneColors[i]+'23',laneColors[i]+'aa');text(lanes[i],x+49,ry,22,laneColors[i],'center')}
+ if(battle.phase==='playing'){
+  const travel=1.55,pxPerSec=157;
+  for(const n of battle.notes){if(n.done)continue;let ahead=n.time-battle.clock;if(ahead>travel||ahead<-.24)continue;let x=x0+n.lane*(lw+gap)+49,y=ry-ahead*pxPerSec;ctx.save();ctx.translate(x,y);ctx.rotate(Math.PI/4);rounded(-10,-10,20,20,3,laneColors[n.lane]);ctx.restore();}
+ }
+ if(battle.phase==='playing'){drawBar(345,568,270,5,((battle.clock%(.62*8))/(.62*8)),'#d8f36a','#32464b');if(battle.judgeTimer>0)text(battle.judge,480,425,20,battle.judge==='PERFECT'?'#d8f36a':'#ffe19a','center');}
+ else if(battle.phase==='ready')text('Tap / press any arrow when a note reaches the glow.',480,539,13,'#c9d6cb','center');
+ else if(battle.phase==='resolve'){text(battle.result,480,536,19,'#d8f36a','center');text(`${battle.hits} / 8 notes  ·  ${battle.best} best combo`,480,558,11,'#c2d0c7','center','DM Mono')}
+ else if(battle.phase==='won'){text(battle.result,480,535,18,'#d8f36a','center');text('A friend made through music. Press SPACE to continue.',480,558,11,'#c2d0c7','center','DM Mono')}
+ else if(battle.phase==='lost')text('Out of energy — take a breath and try again.',480,544,13,'#f0cbb0','center');
+ if(battle.flash>0){ctx.globalAlpha=battle.flash*.12;ctx.fillStyle='#e7f2ab';ctx.fillRect(0,0,W,H);ctx.globalAlpha=1}
+}
+function drawTitle(){drawField();ctx.fillStyle='#0c1a28c9';ctx.fillRect(0,0,W,H);
+ // soft circular glow behind title
+ let glow=ctx.createRadialGradient(483,252,20,483,252,410);glow.addColorStop(0,'#27424aa8');glow.addColorStop(1,'#0e1c2a00');ctx.fillStyle=glow;ctx.fillRect(0,0,W,H);
+ mono('A LITTLE ADVENTURE, IN TIME',480,101,12,'#d8f36a','center');text('WILD',480,181,77,'#f4f1dc','center');text('BEAT',480,252,77,'#d8f36a','center');
+ line(411,302,549,302,'#d8f36a88',1);text('Wander the trail. Meet a new friend.',480,334,18,'#e1e9d8','center');text('Make music together.',480,360,18,'#e1e9d8','center');
+ rounded(361,408,238,58,8,'#d8f36a','#eff6b7');text('START YOUR JOURNEY',480,438,15,'#1c322f','center');
+ mono('MOVE WITH WASD   ·   SPACE TO INTERACT',480,500,10,'#c7d5c9','center');mono('WHEN THE WILD BEAT CALLS, HIT ←  ↓  ↑  → ON TIME',480,521,10,'#c7d5c9','center');
+ // tiny original creature badges
+ drawCreature('mosskit',291,412,.52,Math.sin(t*2)*2);drawCreature('embercub',670,412,.52,Math.sin(t*2+1)*2);
+ rounded(869,20,66,34,7,'#102737b8','#d2e8d344');mono(muted?'SOUND OFF':'♫  SOUND',902,37,9,'#e4edcf','center');
+}
+function drawGameOver(){drawBattle();ctx.fillStyle='#0a1525aa';ctx.fillRect(0,0,W,H);rounded(275,203,410,189,12,'#142d37','#d5e5ce66');mono('THE TRAIL CAN WAIT',480,239,10,'#d8f36a','center');text('Take a little breather.',480,282,27,'#f4f1dc','center');text('Your next song is waiting.',480,315,15,'#bacbc2','center');rounded(384,340,192,37,6,'#d8f36a');text('TRY AGAIN',480,359,13,'#1c322f','center')}
+function drawControls(){if(mode!=='world')return;
+ // touch d-pad, softly visible on compact devices only (CSS canvas scales)
+ ctx.globalAlpha=.72;const pts=[[81,492,'←'],[139,450,'↑'],[139,534,'↓'],[197,492,'→']];for(const [x,y,s] of pts){rounded(x-22,y-22,44,44,9,'#102939a8','#e3edcc88');text(s,x,y,18,'#edf0d4','center')}rounded(812,484,104,57,9,'#d8f36a','#f0f3cb');text('TALK',864,512,13,'#19332e','center');ctx.globalAlpha=1;
+}
+function draw(){ctx.clearRect(0,0,W,H);if(mode==='title')drawTitle();else if(mode==='world'){drawField();drawControls()}else if(mode==='battle')drawBattle();else if(mode==='over')drawGameOver();
+ if(mode!=='title'&&mode!=='over'){rounded(875,17,60,30,6,'#102737bb','#d2e8d344');mono(muted?'OFF':'♫',905,32,12,'#e4edcf','center')}
+}
+function enterEncounter(){beginBattle()}
+function updateWorld(dt){worldTime+=dt;if(messageTimer>0)messageTimer-=dt;let dx=0,dy=0;if(keys.ArrowLeft||keys.a||keys.A)dx--;if(keys.ArrowRight||keys.d||keys.D)dx++;if(keys.ArrowUp||keys.w||keys.W)dy--;if(keys.ArrowDown||keys.s||keys.S)dy++;
+ if(dx||dy){let len=Math.hypot(dx,dy);player.x=clamp(player.x+dx/len*145*dt,260,700);player.y=clamp(player.y+dy/len*145*dt,325,570);player.dir=dx<0?-1:dx>0?1:player.dir;player.steps+=dt*145;encounterWait-=dt;if(player.steps>180&&encounterWait<=0){player.steps=0;encounterWait=30;message='Something is keeping time in the tall grass…';messageTimer=1.5;setTimeout(()=>{if(mode==='world')enterEncounter()},700)}}
+ if(keys[' ']||keys.Enter){keys[' ']=false;keys.Enter=false;message='The old sign says: “Follow the rhythm, find your people.”';messageTimer=2;setStatus('Every encounter is a chance to make a friend.')}
+ if(encounterWait===1.6)encounterWait-=dt;
+}
+function updateBattle(dt){if(!battle)return;battle.flash=Math.max(0,battle.flash-dt*2.7);battle.judgeTimer=Math.max(0,(battle.judgeTimer||0)-dt);
+ if(battle.phase==='ready'){battle.phaseTimer-=dt;if(battle.phaseTimer<=0)startPhrase()}
+ else if(battle.phase==='playing'){
+  battle.clock+=dt;for(const n of battle.notes){if(!n.done&&battle.clock>n.time+.26){n.done=true;battle.misses++;battle.combo=0}}
+  if(battle.clock>6.25){resolvePhrase()}
+ }else if(battle.phase==='resolve'){battle.phaseTimer-=dt;if(battle.phaseTimer<=0){if(player.hp<=1&&battle.hp>0){battle.phase='lost';mode='over'}else{battle.phase='ready';battle.phaseTimer=.8}}}
+ else if(battle.phase==='won'){battle.phaseTimer-=dt;if(battle.phaseTimer<=0)finishBattle()}
+}
+function finishBattle(){mode='world';player.xp+=35;player.hp=Math.min(player.max,player.hp+20);if(player.xp>=player.level*70){player.xp-=player.level*70;player.level++;player.max+=10;player.hp=player.max;message=`A new groove! You reached level ${player.level}.`}else message=`${battle.foe.name} is now your friend. +35 trail XP!`;messageTimer=3;encounterWait=99;setStatus('Nice work. Keep wandering to find another friend.');battle=null}
+function frame(now){let dt=Math.min(.04,(now-last)/1000||0);last=now;t+=dt;if(mode==='world')updateWorld(dt);if(mode==='battle')updateBattle(dt);draw();requestAnimationFrame(frame)}
+function keydown(e){const k=e.key;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(k))e.preventDefault();keys[k]=true;if(mode==='title'&&(k===' '||k==='Enter'))startGame();else if(mode==='battle'){const lane={'ArrowLeft':0,'ArrowDown':1,'ArrowUp':2,'ArrowRight':3}[k];if(lane!==undefined)hitLane(lane);if((k===' '||k==='Enter')&&battle.phase==='won')finishBattle();if(k==='Escape'){mode='world';battle=null;setStatus('You slipped away safely.')}}else if(mode==='over'&&(k===' '||k==='Enter'))startGame()}
+function keyup(e){keys[e.key]=false}
+function pointer(e){const rect=canvas.getBoundingClientRect(),x=(e.clientX-rect.left)*W/rect.width,y=(e.clientY-rect.top)*H/rect.height;
+ if(mode==='title'){if(x>850&&y<70){muted=!muted;return}if(y>380&&y<480)startGame();return}
+ if(x>865&&y<60){muted=!muted;return}
+ if(mode==='battle'){if(battle.phase==='won'){finishBattle();return}if(battle.phase==='playing'){let ix=Math.round((x-332)/111);if(ix>=0&&ix<4)hitLane(ix)}return}
+ if(mode==='over'){startGame();return}
+ if(mode==='world'){if(x>770&&y>430){keys[' ']=true;setTimeout(()=>keys[' ']=false,100);return}
+  // directional touch controls held through pointer motion
+  let dpad=[{x:81,y:492,key:'a'},{x:139,y:450,key:'w'},{x:139,y:534,key:'s'},{x:197,y:492,key:'d'}].find(p=>Math.abs(p.x-x)<25&&Math.abs(p.y-y)<25);if(dpad){keys[dpad.key]=true;setTimeout(()=>keys[dpad.key]=false,240)} }
+}
+window.addEventListener('keydown',keydown);window.addEventListener('keyup',keyup);canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture?.(e.pointerId);pointer(e)});canvas.addEventListener('pointerup',()=>{keys.w=keys.a=keys.s=keys.d=false});
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
